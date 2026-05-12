@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Balcão - Controle de Mesas</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <style>
+    body {
+      background-image: url('fundo.jpg');
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background-color: rgba(0,0,0,0.3);
+      z-index: -1;
+    }
+    h2 {
+      color: #FFD700;
+      text-shadow: 1px 1px 3px rgba(0,0,0,0.6);
+    }
+    .card {
+      background-color: rgba(255,255,255,0.9);
+    }
+  </style>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+    import { getDatabase, ref, onValue, remove } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAMP2BCzSLRDxYBc7VZNNoyo1DzZyS0QHo",
+      authDomain: "esquinagrill-ffdfa.firebaseapp.com",
+      databaseURL: "https://esquinagrill-ffdfa-default-rtdb.firebaseio.com",
+      projectId: "esquinagrill-ffdfa",
+      storageBucket: "esquinagrill-ffdfa.firebasestorage.app",
+      messagingSenderId: "1070759893350",
+      appId: "1:1070759893350:web:91379975c8cc6741b750a7",
+      measurementId: "G-PKBXHQZD9W"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    let totalMesa = 0;
+    let mesaAtual = "";
+
+    function carregarPedidos() {
+      onValue(ref(db, "pedidos"), snapshot => {
+        const pedidos = snapshot.val();
+        let html = "";
+        const mesas = {};
+
+        for (const id in pedidos) {
+          const p = pedidos[id];
+          if (!mesas[p.mesa]) mesas[p.mesa] = [];
+          mesas[p.mesa].push({ ...p, id });
+        }
+
+        for (const mesa in mesas) {
+          let total = 0;
+          html += `<div class="card shadow-sm mb-4"><div class="card-body">
+                   <h5 class="card-title">Mesa ${mesa}</h5>
+                   <table class="table table-striped"><thead>
+                   <tr><th>Item</th><th>Preço</th><th>Qtd</th><th>Total</th></tr>
+                   </thead><tbody>`;
+          mesas[mesa].forEach(p => {
+            const subtotal = p.preco * p.quantidade;
+            total += subtotal;
+            html += `<tr><td>${p.item}</td><td>R$${p.preco.toFixed(2)}</td><td>${p.quantidade}</td><td>R$${subtotal.toFixed(2)}</td></tr>`;
+          });
+          html += `</tbody></table>
+                   <p class="fw-bold text-success">Total da Mesa ${mesa}: R$${total.toFixed(2)}</p>
+                   <button class="btn btn-danger btn-sm" onclick="abrirPagamento('${mesa}', ${total})">Fechar Conta</button>
+                   </div></div>`;
+        }
+
+        document.getElementById("pedidos").innerHTML = html;
+      });
+    }
+
+    window.abrirPagamento = function(mesa, total) {
+      mesaAtual = mesa;
+      totalMesa = total;
+      document.getElementById("mesaPagamento").innerText = mesa;
+      document.getElementById("formaPagamento").value = "pix";
+      document.getElementById("campoDinheiro").style.display = "none";
+      document.getElementById("valorRecebido").value = "";
+      document.getElementById("troco").innerText = "";
+      const modal = new bootstrap.Modal(document.getElementById("pagamentoModal"));
+      modal.show();
+    }
+
+    window.mostrarCampoDinheiro = function() {
+      const forma = document.getElementById("formaPagamento").value;
+      if (forma === "dinheiro") {
+        document.getElementById("campoDinheiro").style.display = "block";
+      } else {
+        document.getElementById("campoDinheiro").style.display = "none";
+      }
+    }
+
+    window.calcularTroco = function() {
+      const recebido = parseFloat(document.getElementById("valorRecebido").value);
+      if (!isNaN(recebido)) {
+        const troco = recebido - totalMesa;
+        document.getElementById("troco").innerText = "R$ " + troco.toFixed(2);
+      } else {
+        document.getElementById("troco").innerText = "";
+      }
+    }
+
+    window.confirmarPagamento = function() {
+      const forma = document.getElementById("formaPagamento").value;
+      if (forma === "dinheiro") {
+        const recebido = parseFloat(document.getElementById("valorRecebido").value);
+        if (isNaN(recebido)) {
+          alert("Digite o valor recebido!");
+          return;
+        }
+        const troco = recebido - totalMesa;
+        if (troco < 0) {
+          alert("Valor insuficiente!");
+          return;
+        }
+        alert("Pagamento em dinheiro confirmado. Troco: R$ " + troco.toFixed(2));
+      } else {
+        alert("Pagamento confirmado via " + forma);
+      }
+
+      // Remove pedidos da mesa
+      onValue(ref(db, "pedidos"), snapshot => {
+        const pedidos = snapshot.val();
+        for (const id in pedidos) {
+          if (pedidos[id].mesa == mesaAtual) {
+            remove(ref(db, "pedidos/" + id));
+          }
+        }
+        alert(`Conta da Mesa ${mesaAtual} foi fechada!`);
+      }, { onlyOnce: true });
+
+      const modal = bootstrap.Modal.getInstance(document.getElementById("pagamentoModal"));
+      modal.hide();
+    }
+
+    document.addEventListener("DOMContentLoaded", carregarPedidos);
+  </script>
+</head>
+<body>
+  <div class="container py-4">
+    <h2 class="text-center mb-4">🍽️ Controle de Mesas</h2>
+    <div class="text-center mb-4">
+      <button class="btn btn-primary" onclick="window.location.href='cardapio.html'">Ir para Página de Pedidos</button>
+    </div>
+    <div id="pedidos"></div>
+  </div>
+
+  <!-- Modal de pagamento -->
+  <div class="modal fade" id="pagamentoModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Pagamento da Mesa <span id="mesaPagamento"></span></h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <label>Forma de pagamento:</label>
+          <select id="formaPagamento" class="form-select" onchange="mostrarCampoDinheiro()">
+            <option value="pix">Pix</option>
+            <option value="cartao">Cartão</option>
+            <option value="dinheiro">Dinheiro</option>
+          </select>
+
+          <div id="campoDinheiro" class="mt-3" style="display:none;">
+            <label>Valor recebido:</label>
+            <input type="number" id="valorRecebido" class="form-control" 
+                   placeholder="Digite valor entregue" oninput="calcularTroco()">
+            <p class="mt-2">Troco: <span id="troco"></span></p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-success" onclick="confirmarPagamento()">Confirmar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
